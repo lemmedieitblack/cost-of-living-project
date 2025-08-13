@@ -1,0 +1,355 @@
+---
+title: "Cost of Living in Armenia: An Analytical Overview"
+abstract: "This report explores the current cost of living in Armenia using recent data on housing prices, rent, food prices, car prices and salaries. Using static visualizations in R, we provide insights into how different factors affect affordability, and highlight key challenges for residents in Yerevan and beyond."
+author: "Nare Kechechyan, Anna Khurshudyan, Zhora Poghosyan, Alex Zargarian"
+date: "2025-08-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = F, message = F, out.width="70%")
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(RColorBrewer)
+library(lubridate)
+library(viridis)
+library(scales)
+```
+
+## Keywords: 
+"Cost of Living, Armenia, Housing, Rent, Car, Products, Youth Independence, Affordability, Minimum wage"
+
+# Introduction
+
+Economic independence in Armenia, particularly in Yerevan, have shifted notably in recent years, affecting the affordability of basic needs. This report explores various dimensions of the cost of living, including housing, rental markets, food and grocery prices, salaries, and vehicle costs. By combining diverse data sources and visual analytics, we aim to assess how accessible essential goods and services are—especially for young adults striving for financial independence.
+
+# Literature review
+
+Various organizations such as Numbeo and the World Bank provide cost of living data, but Armenia-specific analyses are limited. This report aims to provide a local context by using up-to-date prices from different sectors.
+
+# Methodology
+
+Food price data was obtained from the World Food Programme (WFP) website, offering official records on essential grocery items. Car price data was scraped from the Armenian vehicle listing website auto.am, while housing data—both for rentals and property purchases—was gathered through web scraping from major local real estate platforms. Salary information was sourced from salaries.am, which provides estimates of average wages by profession and industry.
+
+All datasets were cleaned and processed using R, including the removal of inconsistencies, conversion of formats, and handling of missing values. 
+
+
+# Rental houses visuals
+
+## 1. Boxplot: Price per Guest by Room Type
+```{r price-by-roomtype-boxplot}
+rental_data <- read.csv("Data cleanning/Cleaned Data for Rental.csv")
+
+df <- rental_data %>%
+  filter(Max.Guests > 0) %>%
+  mutate(
+    PricePerGuest = TTM.Avg.Daily.Rate / Max.Guests,
+    Room.Type = str_replace_all(Room.Type, "_", " ") %>% str_to_title()
+  )
+
+ggplot(df, aes(x = Room.Type, y = PricePerGuest)) +
+  geom_boxplot(fill = "lightblue", alpha = 0.8) +
+  scale_y_log10(labels = scales::dollar) +
+  labs(
+    title = "Price per Guest by Room Type (Log Scale)",
+    x = "Room Type", y = "Price per Guest ($)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+The median price per guest for "Hotel Room" is noticeably higher than for "Entire Home" or "Private Room." This suggests that hotels, even on a per-guest basis, generally command a premium, likely due to services, amenities, and standardized quality. There are significant outliers for "Entire Home"s, one even reaching 1000$ per guest. These are perhaps very large or luxurious accommodations. These insights are relevant for young people seeking accommodations for short period, for example during education.
+
+## 2. Scatterplot: Price vs Rating by City
+
+```{r scatter-price-rating}
+df <- rental_data %>%
+  filter(Max.Guests > 0) %>%
+  mutate(
+    PricePerGuest = TTM.Avg.Daily.Rate / Max.Guests,
+    OccupancyRate = as.numeric(as.character(TTM.Occupancy.Rate)),
+    City.Category = str_replace_all(City.Category, "_", " ")
+  )
+
+ggplot(df, aes(x = TTM.Avg.Daily.Rate, y = Overall.Rating, color = City.Category)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linetype = "dashed") +
+  scale_x_continuous(limits = c(0, 500), breaks = seq(0, 500, by = 100)) +
+  scale_color_brewer(type = "qual", palette = "Set1", name = "City") +
+  labs(title = "Price vs Rating by City", x = "Price ($)", y = "Overall Rating") +
+  theme_minimal()
+```
+
+When it comes to ratings, young adults can easily find highly-rated rentals at lower price points (e.g., under \$100) in the Yerevan Area. This means they don't have to break the bank to secure a good quality stay.  "Other Armenia" (red dots) has significantly fewer listings on this chart and is concentrated at the lower end of the price spectrum (mostly under $100). Their ratings are also generally high. This suggests that short-term rentals outside the capital are typically more affordable but with less variety. 
+
+## 3. Boxplot: Ratings Across Aspects
+
+```{r rating-aspects-boxplot}
+df <- rental_data %>%
+  filter(Max.Guests > 0) %>%
+  mutate(PricePerGuest = TTM.Avg.Daily.Rate / Max.Guests)
+
+rating_cols <- names(df)[grepl("Rating$", names(df))]
+
+ratings_long <- df %>%
+  select(Listing.Name, all_of(rating_cols)) %>%
+  pivot_longer(cols = all_of(rating_cols), names_to = "Aspect", values_to = "Rating") %>%
+  mutate(Aspect = str_replace_all(Aspect, "\\.", " ")) %>%
+  filter(!is.na(Rating))
+
+ggplot(ratings_long, aes(x = reorder(Aspect, -Rating), y = Rating, fill = Aspect)) +
+  geom_boxplot(alpha = 0.7, show.legend = FALSE, outlier.alpha = 0.5) +
+  labs(title = "Rating Aspects Comparison", x = "Aspect", y = "Rating") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+"Location Rating" has the tightest distribution (the smallest box and fewer outliers), with its median close to 5.0. This suggests that rental properties in Armenia are overwhelmingly perceived as being in convenient and desirable locations. While the median "Value Rating" is also high, it has a more pronounced spread of outliers on the lower end.
+
+For budget-conscious young adults, this means value is not universally guaranteed, even if locations are. They should pay attention to "Value Rating" specifically when choosing a rental to ensure they are getting the most for their money. 
+
+# Houses for Sale
+## 1. Scatterplot: Price vs Area
+
+```{r hist-price-facetted}
+housing_df <- read.csv("Data cleanning/cleaned_houses.csv")
+
+ggplot(housing_df, aes(x = area, y = price)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  labs(title = "Price vs Area", x = "Area (sq.m)", y = "Price ($)") +
+  theme_minimal()
+```
+
+There is a clear positive correlation between the area of a house and its price. However, there are also numerous instances where the area gets bigger but the cost doesn't increase proportionally, meaning there are many houses with average area and price as low as the smallest houses in the data. 
+
+## 2. Boxplot: Price by Number of Rooms
+
+```{r price-by-rooms}
+housing_df <- housing_df %>% mutate(num_rooms = as.factor(num_rooms))
+
+ggplot(housing_df, aes(x = num_rooms, y = price, fill = num_rooms)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.3) +
+  scale_fill_brewer(palette = "Blues", guide = FALSE) +
+  labs(title = "Price Distribution by Number of Rooms", x = "Number of Rooms", y = "Price ($)") +
+  theme_minimal()
+```
+
+As the number of rooms in a house for sale in Armenia increases, the median price generally rises. However, that is not the case with 5 and 6 room houses, likely due to the smaller number of such houses. For young adults planning to start a family, a 3 or 4-room home might be ideal, but they should be prepared for a higher price point, owning property is a more tangible goal in Armenia than in many other countries.
+
+## 3. Scatterplot: Price vs Area by Building Type
+
+```{r price-vs-area-building}
+ggplot(housing_df, aes(x = area, y = price, color = building_type)) +
+  geom_point(alpha = 0.7, size = 1) +
+  scale_color_brewer(type = "qual", palette = "Set1", name = "Building Type") +
+  labs(title = "Price vs Area by Building Type", x = "Area (sq.m)", y = "Price ($)") +
+  theme_minimal() +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+```
+
+Both "monolit" and "stone" buildings tend to occupy the higher price points for any given area, particularly as the area increases.
+
+"Panel" buildings are predominantly concentrated at the lower end of the price spectrum for various areas. There's a dense cluster of green dots in the more affordable range, especially for smaller to mid-sized homes. These are often older Soviet-era constructions. While they might be older or less aesthetically appealing to young adults, they offer functional living space at a lower cost, directly impacting the initial cost of living for a homeowner.
+
+# Food prices
+
+## 1. Average Price Over Time
+
+```{r avg-price-over-time}
+food_df <- read.csv("Data used/wfp_food_prices_arm.csv") %>%
+  filter(category != "non-food") %>%
+  mutate(
+    date = parse_date_time(date, orders = c("ymd", "dmy", "mdy", "Ymd", "Y-m-d")),
+    price = as.numeric(price),
+    usdprice = as.numeric(usdprice)
+  ) %>%
+  filter(!is.na(date), !is.na(usdprice), usdprice > 0) %>%
+  mutate(
+    month = format(date, "%m"),
+    year = format(date, "%Y")
+  )
+
+food_df %>%
+  group_by(date) %>%
+  summarise(avg_price = mean(usdprice, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = date, y = avg_price)) +
+  geom_line(color = "darkgreen", size = 0.8) +
+  labs(title = "Average Food Price Over Time",
+       x = "Date", y = "Average Price (USD)") +
+  theme_minimal()
+```
+
+A time series of average food prices shows a clear upward trend since 2018, with pronounced spikes in recent years. This suggests that the overall cost of food in Armenia has been increasing steadily, contributing to greater financial pressure on consumers 
+
+## 2. Top 10 Most Volatile Commodities
+
+```{r volatility}
+food_df %>%
+  group_by(commodity) %>%
+  summarise(sd_price = sd(usdprice, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  filter(n > 20) %>%
+  slice_max(sd_price, n = 10) %>%
+  ggplot(aes(x = reorder(commodity, sd_price), y = sd_price)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(title = "Top 10 Most Volatile Food Items",
+       x = "Commodity", y = "Price Std Dev (USD)") +
+  theme_minimal()
+```
+
+The second visualization ranks the ten most volatile food commodities based on their standard deviation in price. Items like sunflower oil, meat, and eggs show high variability, indicating price instability for commonly purchased goods. Such volatility complicates budgeting and food security, especially for lower-income youth.
+
+## 3. Most Expensive Categories
+
+```{r expensive-categories-facetted}
+food_df %>%
+  group_by(category, admin1) %>%
+  summarise(avg_usd = mean(usdprice, na.rm = TRUE), .groups = "drop") %>%
+  filter(!is.na(category)) %>%
+  slice_max(avg_usd, n = 10, by = admin1) %>%
+  ggplot(aes(x = reorder(category, avg_usd), y = avg_usd)) +
+  geom_col(fill = "darkgreen") +
+  coord_flip() +
+  labs(title = "Top Expensive Food Categories by Region",
+       x = "Category", y = "Average Price (USD)") +
+  theme_minimal()
+```
+
+By aggregating prices by category, the data reveals which types of food are consistently more expensive. Meat and dairy products top the list, followed by oils and certain cereals. These are key protein and calorie sources, highlighting the nutritional cost of maintaining a balanced diet.
+
+## 4. Monthly Food Basket Cost
+
+```{r basket-cost}
+basket_items <- c("Bread", "Rice", "Milk", "Eggs", "Sunflower Oil", "Potatoes")
+quantities <- tibble::tibble(
+  commodity = basket_items,
+  quantity = c(8, 2, 10, 30, 1.5, 5)
+)
+
+food_df %>%
+  filter(commodity %in% basket_items) %>%
+  group_by(date, commodity) %>%
+  summarise(avg_price = mean(usdprice, na.rm = TRUE), .groups = "drop") %>%
+  left_join(quantities, by = "commodity") %>%
+  mutate(item_cost = avg_price * quantity) %>%
+  group_by(date) %>%
+  summarise(total_basket = sum(item_cost, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = date, y = total_basket)) +
+  geom_line(color = "darkorange", size = 1) +
+  labs(title = "Cost of Monthly Food Basket",
+       subtitle = "Bread, Rice, Milk, Eggs, Sunflower Oil, Potatoes",
+       x = "Date", y = "Total Cost (USD)") +
+  theme_minimal()
+```
+
+
+A representative food basket—including bread, rice, milk, eggs, sunflower oil, and potatoes—was constructed based on realistic monthly consumption levels. The cost of this basket has increased over time, reflecting the broader inflation trend in basic groceries. This benchmark offers a concrete sense of how much it costs to meet essential food needs in Armenia.
+
+## 5. Affordability vs Minimum Wage
+
+```{r affordability}
+wage_usd <- 75000 / 390  # AMD to USD conversion
+
+basket_items <- c("Bread", "Rice", "Milk", "Eggs", "Sunflower Oil", "Potatoes")
+quantities <- tibble::tibble(
+  commodity = basket_items,
+  quantity = c(8, 2, 10, 30, 1.5, 5)
+)
+
+food_df %>%
+  filter(commodity %in% basket_items) %>%
+  group_by(date, commodity) %>%
+  summarise(avg_price = mean(usdprice, na.rm = TRUE), .groups = "drop") %>%
+  left_join(quantities, by = "commodity") %>%
+  mutate(item_cost = avg_price * quantity) %>%
+  group_by(date) %>%
+  summarise(total_basket = sum(item_cost, na.rm = TRUE), .groups = "drop") %>%
+  mutate(afford_ratio = wage_usd / total_basket) %>%
+  ggplot(aes(x = date, y = afford_ratio)) +
+  geom_line(color = "blue", size = 1) +
+  labs(title = "Food Affordability: Wage vs Basket",
+       subtitle = "How many food baskets can minimum wage buy?",
+       x = "Date", y = "Baskets per Min Wage") +
+  theme_minimal()
+```
+
+To evaluate affordability, the cost of the monthly food basket was compared against the Armenian minimum wage (approximately AMD 75,000, or ~$192 USD at the time of writing). The affordability ratio—defined as the number of baskets purchasable per minimum wage—has declined over time, meaning that food is becoming less affordable for low-income workers, including youth.
+
+## 6. Heatmap of Monthly Prices
+
+```{r heatmap}
+food_df %>%
+  mutate(year = format(date, "%Y"),
+         month = format(date, "%m")) %>%
+  group_by(year, month) %>%
+  summarise(mean_price = mean(usdprice, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = month, y = year, fill = mean_price)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "B", name = "Avg Price (USD)") +
+  labs(title = "Monthly Average Food Prices",
+       x = "Month", y = "Year") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+A heatmap of monthly average food prices shows seasonal variation and a general upward trend year-over-year. Prices tend to be higher in the winter months, likely due to reduced local supply and increased reliance on imports.
+
+## 7. Regional Trends
+
+```{r regional-trends-facetted}
+food_df %>%
+  filter(price > 0, !is.na(admin1), date >= as.Date("2018-01-01")) %>%
+  group_by(date, admin1) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE), .groups = "drop") %>%
+  ggplot(aes(x = date, y = avg_price)) +
+  geom_line(color = "darkblue") +
+  facet_wrap(~ admin1, scales = "free_y") +
+  labs(title = "Food Price Trends by Region (AMD)",
+       x = "Date", y = "Average Price (AMD)") +
+  theme_minimal()
+```
+Regional trends reveal that food prices in Yerevan consistently increased unlike in other provinces (marzes), likely due to higher demand, concentration of imported goods, and urban cost premiums. As the majority of the population is concentrated in Yerevan, this population centralization exacerbates the challenge of independence, as young people face steeper expenses with limited wage growth. Despite this difference, a significant and consistent post-2020 price spike is observed across all regions.
+This suggests that while youth living outside Yerevan may benefit from slightly lower prices, the overarching rise in food costs is a nationwide phenomenon, driven by macroeconomic forces rather than local market variation. The gap between wages and essential expenses remains a key barrier to youth independence across the country.
+
+# Salary insights
+
+## 1.  Salary Distribution Histogram
+
+```{r}
+salary_data <- read.csv("Data cleanning/cleaned_salary_data.csv")
+
+ggplot(salary_data, aes(x = Salary_AMD)) +
+  geom_histogram(bins = 20, fill = "steelblue", color = "white", alpha = 0.8) +
+  labs(title = "Distribution of Salaries (AMD)", x = "Monthly Salary (AMD)", y = "Count") +
+  theme_minimal() +
+  scale_x_continuous(labels = comma)
+```
+Armenia's salary distribution is skewed towards lower monthly incomes, with most salaries falling under 1,000,000 AMD. This means young adults generally face modest earning potential, making careful budgeting for their cost of living essential.
+
+## 2. Salary by Experience Level Boxplot
+
+```{r}
+salary_data$Experience_Level <- factor(
+  salary_data$Experience_Level,
+  levels = c("Entry Level (0 years)", "Junior (0-2 years)", "Mid-Level (2-5 years)", "Senior (5-10 years)", "Expert (10+ years)")
+)
+
+ggplot(salary_data, aes(x = Experience_Level, y = Salary_AMD, fill = Experience_Level)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.3) +
+  labs(title = "Salary by Experience Level, Faceted by Salary Category",
+       y = "Salary (AMD)", x = "Experience Level") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  coord_cartesian(expand = FALSE)
+```
+
+Based on the Salary by Experience Level Boxplot, it's clear that in Armenia, salaries generally increase with more experience. This shows that long-term career growth in Armenia directly translates to higher earning potential, which is crucial for young adults planning their financial future and managing the cost of living.
+
+
+# Conclusion
+
+This report highlights the growing challenges associated with the cost of living in Armenia, particularly for young adults striving for economic independence. The data reveals a consistent rise in prices across essential categories: housing, food, and transportation. While salary levels, especially at the entry level, remain relatively modest. Rental and property markets in Yerevan are significantly more expensive than in other regions, and food prices have become increasingly volatile and less affordable in relation to minimum wage. Although long-term career growth may lead to improved income, the current affordability gap presents a major obstacle for youth. With most of the population concentrated in Yerevan, the urban cost premium further limits access to affordable living. These findings underscore the need for targeted economic policies that address wage stagnation, price volatility, and regional inequality to ensure a more sustainable path toward financial independence for Armenia's younger generations.
